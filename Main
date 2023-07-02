@@ -1,0 +1,356 @@
+from lib2to3.pygram import Symbols
+from typing import Any
+from kucoin.client import Trade
+from kucoin.client import Market
+from numpy import True_, size
+import pandas as pd
+from time import sleep
+import requests
+import json
+import datetime
+from audioop import error
+from lib2to3.pgen2 import driver
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+import email
+from apiclient import errors
+from webbrowser import Chrome
+import time
+from random import randint, random, uniform
+import re
+import smtplib
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from kucoin.client import User
+from datetime import date
+
+api_key = '62199b553d48f400010a4ac0'
+api_secret = '8a3bd976-8dd9-4868-b744-d2cc9af37967'
+
+api_passphrase = '2@@3Demha'
+
+m_client = Market(api_key, api_secret, api_passphrase)
+client = Trade(api_key, api_secret, api_passphrase)
+clientU = User(api_key, api_secret, api_passphrase)
+
+gc = gspread.service_account(filename='kucoin.json')
+gsheet = gc.open_by_url("https://docs.google.com/spreadsheets/d/17xkPL4SwYYca9Dih19x7kppbr7MnpKpF8PMvpngUuRs/edit#gid=0")
+wsheet = gsheet.worksheet("Sheet1")
+
+now = datetime.datetime.now()
+year = 2022
+month = now.month
+
+
+def send_email(letter):
+    print(letter)
+
+def gettickers():
+    global tickerlist, numberoftickers
+    USDT1 = []
+    USDT = []
+
+    ticker = m_client.get_all_tickers()
+    ticker_str = str(ticker)
+    split = ticker_str.split()
+    punctuation= '''!()[]{};:'"\, <>./?@#$%^&*_~'''
+    emptyString=""
+    
+    for x in split:
+        if "USDT" in x:
+            myString= x
+            for i in punctuation:
+                myString = myString.replace(i,emptyString)
+                tickers = myString.strip()
+            USDT1.append(tickers)
+    
+    for i in range(0, len(USDT1), 2):
+        USDT.append(USDT1[i])
+
+    for x in USDT:
+        a = m_client.get_24h_stats(x)
+        r = float(a['volValue'])
+        if r > 700000:
+            tickerlist[0:0] = [x]
+            numberoftickers += 1
+
+def getinitialrates():
+    global initialrates
+    for i in range(0, upper):
+        try:
+            cellvalue = tickerlist[i]
+            ticker_24h = m_client.get_24h_stats(cellvalue)
+            info_str = float(ticker_24h['changeRate'])
+            initialrates.insert(i, info_str)
+        except:
+            continue
+
+def circulate():
+    global flag10tickers, flag15tickers
+    x = 0
+    while x == 0:
+        for i in range(0, upper):
+            try: 
+
+                if (i == Lquartercheck or i == middlecheck or i == Uquartercheck):
+
+                    if(int(len(flag15tickers)) > 0):
+                        for i in flag15tickers:
+                            a = tickerlist.index(i)
+                            firstrate = initialrates[a]
+                            ticker_24h = m_client.get_24h_stats(i)
+                            newrate = float(ticker_24h['changeRate'])
+                            if((newrate - firstrate) >= .25):
+                                time.sleep(120)
+                                ticker_24h = m_client.get_24h_stats(i)
+                                test = float(ticker_24h['changeRate'])
+                                if((test - initialrate) >= .26):
+                                    wsheet.update("K2", i)
+                                    x += 1
+                                    print(i)
+                                    return
+                            if((newrate - firstrate) <= .15):
+                                flag15tickers.remove(i)
+
+
+                    if(int(len(flag10tickers)) > 0):
+                        for i in flag10tickers:
+                            a = tickerlist.index(i)
+                            firstrate = initialrates[a]
+                            ticker_24h = m_client.get_24h_stats(i)
+                            newrate = float(ticker_24h['changeRate'])
+                            if((newrate - firstrate) >= .25):
+                                time.sleep(120)
+                                ticker_24h = m_client.get_24h_stats(i)
+                                test = float(ticker_24h['changeRate'])
+                                if((test - initialrate) >= .26):
+                                    wsheet.update("K2", i)
+                                    x += 1
+                                    print(i)
+                                    return
+                            if(((newrate - firstrate) >= .15) and (cellvalue not in flag15tickers)):
+                                flag15tickers[0:0] = [i]
+                            if((newrate - firstrate) < .07):
+                                flag10tickers.remove(i)
+
+
+                cellvalue = str(tickerlist[i])
+                ticker_24h = m_client.get_24h_stats(cellvalue)
+                newrate = float(ticker_24h['changeRate'])
+                initialrate = initialrates[i]
+                if(((newrate - initialrate) >= .25) and (initialrate <= .2)):
+                    time.sleep(120)
+                    ticker_24h = m_client.get_24h_stats(cellvalue)
+                    test = float(ticker_24h['changeRate'])
+                    if((test - initialrate) >= .26):
+                        wsheet.update("K2", cellvalue)
+                        x += 1
+                        print(cellvalue)
+                        return
+                if(( .15 <= (newrate - initialrate) < .25) and (cellvalue not in flag15tickers) and (initialrate <= .2)):
+                    flag15tickers[0:0] = [cellvalue]
+                if(( .09 <= (newrate - initialrate) < .125) and (cellvalue not in flag10tickers) and (initialrate <= .2)):
+                    flag10tickers[0:0] = [cellvalue]    
+            except:
+                continue
+
+def orderparser(x):
+    orders = client.get_order_list()
+    string = str(orders)
+    split = string.split(',')
+    for i in split:
+        if x in i:
+            s = i
+            break
+    x = str(s)
+    sp = x.split(':')
+    second = sp[1]
+    third = second.replace("'", "")
+    assetsize = str(third)
+    return assetsize
+
+def maxdecimals(ticker):
+    symbols = str(m_client.get_symbol_list())
+    split = symbols.split()
+    punctuation= '''!()[]{};:'"\, <>./?@#$%^&*_~'''
+    emptyString=""
+
+    for x in split:
+        if ticker in x:
+            index = int(split.index(x))
+            maxdec = split[index + 24]
+            for i in punctuation:
+                maxdec = maxdec.replace(i,emptyString)
+                maxdec = maxdec.strip()
+    return maxdec
+
+def buy():
+        global ordergate
+
+        Oid = 'abc123' + str(randint(0,200))
+        ticker = str(wsheet.acell("K2").value)
+        index = tickerlist.index(ticker)
+        rate1 = float(initialrates[index])
+        t = 0
+        day1 = now.day
+        hour1 = now.hour
+        minute1 = now.minute
+        time1 = datetime.datetime(year,month,day1,hour1,minute1)
+        while t == 0:
+            ticker_24h = m_client.get_24h_stats(ticker)
+            rate2 = float(ticker_24h['changeRate'])
+            time.sleep(3)
+            if (rate2 > (rate1 + .25)):
+                time.sleep(120)
+                ticker_24h = m_client.get_24h_stats(ticker)
+                rate3 = float(ticker_24h['changeRate'])
+                if(rate3 > (rate1 + .26)):
+                    accounts = clientU.get_account('61ac683d50c2f2000179c3e3')
+                    balance = round((float(accounts['balance']) * .97), 2)
+                    tickerstats = m_client.get_ticker(ticker)
+                    ask = str(tickerstats['bestAsk'])
+                    price = float(ask) * 1.0025
+                    size = str(round((balance / price), 3))
+                    order = client.create_market_order(ticker, 'buy',size=size,clientOid=Oid)
+                    c = 0
+                    while c == 0:
+                        time.sleep(2)
+                        symbol = str(orderparser('symbol'))
+                        ticker = ticker.strip()
+                        symbol = symbol.strip()
+                        if symbol == ticker:
+                            filled = float(orderparser('dealFunds'))
+                            c += 1
+ 
+                    truesize = float(orderparser('dealSize'))
+                    funds = float(orderparser('dealFunds'))
+                    avgbuyprice = funds / truesize
+                    wsheet.update("L2", avgbuyprice)
+                    wsheet.update("M2", truesize)
+                    send_email("bought " + ticker)
+                    ordergate += 1
+                    t += 1
+                    return
+
+            day2 = now.day
+            hour2 = now.hour
+            minute2 = now.minute
+            time2 = datetime.datetime(year,month,day2,hour2,minute2)
+            time_delta = time2 - time1
+            delta_in_seconds = time_delta.total_seconds()
+            delta_in_minutes = delta_in_seconds / 60.
+            if(((rate2 - rate1) < .14) or (delta_in_minutes > 13)):
+                wsheet.update("K2", "")
+                t += 1
+                return
+
+def ordermanager():
+        q = 0
+        while q == 0:
+            Oid = 'abc123' + str(randint(0,200))
+            ticker = str(wsheet.acell("K2").value)
+            buyprice = float(wsheet.acell("L2").value)
+            assetsize = str(wsheet.acell("M2").value)
+            tickerdata = m_client.get_ticker(ticker)
+            price =  (float(tickerdata['bestBid']))
+            if (price > (buyprice * 1.04)):
+                client.create_market_order(ticker, 'sell', size=assetsize, clientOid= Oid)
+                time.sleep(15)
+                sizesold = float(orderparser('dealSize'))
+                if(sizesold > (float(assetsize) * .9)):
+                    t = str(1 + len(wsheet.col_values(19)))
+                    wsheet.update("S" + t , ticker)
+                    wsheet.update("T" + t , buyprice)
+                    wsheet.update("U" + t , price)
+                    send_email(ticker + "sold for 2 percent profit")
+                    q += 1
+                    return
+            else:
+                lowest = round((.86 * buyprice), max)
+                stop = round((.92 * buyprice), max)
+                client.create_limit_stop_order(ticker, 'sell', size=assetsize, price=lowest, stopPrice=stop,clientOid=Oid)
+                send_email("stop placed for" + ticker)
+            try:
+                v = 0
+                while v == 0:
+                    time.sleep(5)
+                    tickerdata = m_client.get_ticker(ticker)
+                    price =  (float(tickerdata['bestBid'])) 
+                    if (price > (buyprice * 1.04)):
+                        sellp = str(round((1.035 * buyprice), max))
+                        client.create_limit_order(ticker, 'sell', size=assetsize, price=sellp ,clientOid= Oid)
+                        v +=1
+                v2 = 0
+                while v2 == 0:
+                    time.sleep(5)
+                    side = str(orderparser('side'))
+                    side = side.strip
+                    if side == 'sell':
+                        sizesold = float(orderparser('dealSize'))
+                        if(sizesold > (float(assetsize) * .97)):
+                            funds = float(orderparser('dealFunds'))
+                            sellprice = funds / sizesold
+                            a = abs(sellprice - float(sellp))
+                            b = abs(sellprice - float(stop))
+                            if a > b:
+                                send_email(ticker + "stop hit")
+                                q += 1
+                                v2 += 1
+                                return
+                            if b > a:
+                                t = str(1 + len(wsheet.col_values(19)))
+                                wsheet.update("S" + t , ticker)
+                                wsheet.update("T" + t , buyprice)
+                                wsheet.update("U" + t , sellprice)
+                                send_email(ticker + "sold for 2 percent profit")
+                                q += 1
+                                v2 += 1
+                                return
+            except:
+                continue
+       
+def reset():
+    ticker = str(wsheet.acell("K2").value)
+    wsheet.update("K2", "")
+    time.sleep(.5)
+    wsheet.update("L2", "")
+    time.sleep(.5)
+    wsheet.update("M2", "")
+
+    run = 0
+    while run == 0:
+        initialrates = [-10] * 800
+ 
+        tickerlist = []
+ 
+        flag10tickers = []
+        flag15tickers = []
+ 
+        numberoftickers = 0
+ 
+        gettickers()
+ 
+        upper = numberoftickers
+        Lquartercheck = round(0 + (upper * .25))
+        middlecheck = round(0 + (upper / 2))
+        Uquartercheck = round(0 + (upper * .75))
+ 
+        getinitialrates()
+ 
+        circulate()
+ 
+        ordergate = 0
+
+        ticker = str(wsheet.acell("K2").value)
+        if 'USDT' in ticker:
+            buy()
+ 
+        if ordergate == 1:
+            maxdec = maxdecimals(ticker)
+            max = (int(len(str(maxdec)))) - 2
+            ordermanager()
+
+        reset()
+
+
